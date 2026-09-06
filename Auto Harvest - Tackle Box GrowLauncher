@@ -1,0 +1,128 @@
+EditToggle("ModFly", true)
+Sleep(200)
+
+local ITEM_ID = 3044
+local DELAY_FP = 280
+local DELAY_PNC = 200
+local MAX_HITS = 1
+local NEAR_RANGE = 2
+
+local function punch(x, y)
+    local p = GetLocal()
+
+    SendPacketRaw(false, {
+        type = 3,
+        value = 18,
+        x = p.posX,
+        y = p.posY,
+        px = x,
+        py = y
+    })
+end
+
+local function isNear(tx, ty)
+    local p = GetLocal()
+
+    local dx = math.abs((p.posX / 32) - tx)
+    local dy = math.abs((p.posY / 32) - ty)
+
+    return dx <= NEAR_RANGE and dy <= NEAR_RANGE
+end
+
+local function scanTargets()
+    local targets = {}
+
+    for _, tile in pairs(GetTiles()) do
+        local t = GetTiles(tile.x, tile.y)
+
+        if t.fg == ITEM_ID and t.readyharvest == true then
+            table.insert(targets, {
+                x = tile.x,
+                y = tile.y
+            })
+        end
+    end
+
+    table.sort(targets, function(a, b)
+        if a.y == b.y then
+            return a.x < b.x
+        end
+
+        return a.y < b.y
+    end)
+
+    return targets
+end
+
+local function harvestTile(x, y)
+    local t = GetTiles(x, y)
+
+    if t.fg ~= ITEM_ID or t.readyharvest ~= true then
+        return false
+    end
+
+    FindPath(x, y)
+    Sleep(DELAY_FP)
+
+    if not isNear(x, y) then
+        LogToConsole("Skip (unreachable): " .. x .. "," .. y)
+        return false
+    end
+
+    local hits = 0
+
+    while hits < MAX_HITS do
+        local cur = GetTiles(x, y)
+
+        if cur.fg ~= ITEM_ID then
+            break
+        end
+
+        punch(x, y)
+        Sleep(DELAY_PNC)
+
+        hits = hits + 1
+    end
+
+    return true
+end
+
+local targets = scanTargets()
+
+LogToConsole("Ready to harvest: " .. #targets .. " tiles")
+
+local harvested = 0
+local skipped = 0
+
+for _, pos in ipairs(targets) do
+    if harvestTile(pos.x, pos.y) then
+        harvested = harvested + 1
+    else
+        skipped = skipped + 1
+    end
+end
+
+LogToConsole(
+    "Harvested: " .. harvested .. " | Skipped: " .. skipped
+)
+
+local remaining = scanTargets()
+
+LogToConsole("Sisa tile: " .. #remaining)
+
+if #remaining > 0 then
+    local harvestedRetry = 0
+
+    for _, pos in ipairs(remaining) do
+        if harvestTile(pos.x, pos.y) then
+            harvestedRetry = harvestedRetry + 1
+        end
+    end
+
+    LogToConsole("Retry harvested: " .. harvestedRetry)
+end
+
+FindPath(2, 2)
+Sleep(DELAY_FP)
+
+LogToConsole("Done! Returned to (2,2)")
